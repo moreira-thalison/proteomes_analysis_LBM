@@ -13,7 +13,7 @@
 # Collaborators & Experimental Contexts
 # ----------------------------------------------------------------------
 #
-# 1) Celia Soares
+# 1) Célia Maria de Almeida Soares
 #    Organism: Paracoccidioides brasiliensis
 #    Experimental Conditions:
 #      - hapX knockdown
@@ -24,7 +24,7 @@
 #      - Virulence-associated adaptive responses
 #      - Host–pathogen interaction
 #
-# 2) Alexandre Bailão
+# 2) Alexandre Melo Bailão
 #    Organism: Histoplasma ohiense (strain G217B)
 #    Experimental Conditions:
 #      - Ace transcription factor knockdown
@@ -36,7 +36,7 @@
 #      - Metal stress response
 #      - Transcriptional regulation impacting virulence
 #
-# 3) Mirelle Bailão
+# 3) Mirelle Gracia Silva Bailão
 #    Organism: Fonsecaea pedrosoi
 #    Experimental Conditions:
 #      - Muriform cells (chromoblastomycosis-related morphotype)
@@ -50,13 +50,653 @@
 # - Data import and preprocessing
 # - Quality control and normalization
 # - Differential protein abundance analysis
-# - Functional enrichment (GO / KEGG / custom annotations)
+# - Functional enrichment (GO / KEGG / custom annotations) (I wish)
 # - Comparative and integrative analyses across conditions
 #
-# ----------------------------------------------------------------------
-# Author: Thalison Rodrigues Moreira
-# Program: PhD – Genetics and Molecular Biology
-# Institution: Universidade Federal de Goiás (UFG)
-#
-# Last updated: YYYY-MM-DD
+# ---------------------------------------------------------------------
+#  ___________________________________________________________
+# / Author: Thalison Rodrigues Moreira                        \
+# |                                                           |
+# |Program: PhD – Genetics and Molecular Biology              |
+# |                                                           |
+# \Institution: Universidade Federal de Goiás (UFG) - Brazil  /
+#  ---------------------------------------------------------- 
+#                              \
+#                               \
+# 
+#                          .       .
+#                         / `.   .' \
+#                 .---.  <    > <    >  .---.
+#                 |    \  \ - ~ ~ - /  /    |
+#                  ~-..-~             ~-..-~
+#              \~~~\.'                    `./~~~/
+#    .-~~^-.    \__/                        \__/
+#  .'  O    \     /               /       \  \
+# (_____,    `._.'               |         }  \/~~~/
+#  `----.          /       }     |        /    \__/
+#        `-.      |       /      |       /      `. ,~~|
+#            ~-.__|      /_ - ~ ^|      /- _      `..-'   f: f:
+#                 |     /        |     /     ~-.     `-. _||_||_
+#                 |_____|        |_____|         ~ - . _ _ _ _ _>
+# 
+# 
+# Last updated: 2025-12-31 (New Year's Eve)
 # ======================================================================
+
+# install.packages("openxlsx")
+# install.packages("readr")
+# install.packages("tidyverse")
+# install.packages("cowsay")
+# library(cowsay)
+library(openxlsx)
+library(readr)
+library(tidyverse)
+library(readxl)
+# install.packages("BiocManager")
+# BiocManager::install("GO.db")
+library(GO.db)
+# BiocManager::install("AnnotationDbi")
+library(AnnotationDbi)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(openxlsx)
+library(EnhancedVolcano)
+library(stringr)
+library(renv)
+# install.packages("remotes")  # se ainda não tiver
+# remotes::install_github("kevinblighe/EnhancedVolcano")
+
+# ====================================================================================
+# entrando com os dados sairam do FragPipe analyst para os processamentos  #
+# ====================================================================================
+
+## Pedrosoi e A549 são mais simples pois so têm uma condição controle cada; portanto vou coloca-los sempre 
+# nas manipulações daqui pra frente
+
+##pedrosoi
+pedrosoi_df <- read.csv("./DE_results_pedrosoi_muriforms.csv")
+
+pedrosoi_df <- pedrosoi_df %>%
+  mutate(
+    log2FoldChange = CM6pH2e3_vs_Control_CM6pH5e6_log2_fold_change,
+    padj           = CM6pH2e3_vs_Control_CM6pH5e6_padj
+  )
+
+
+# PB18 infecting A549
+a549_df <- read.csv("DE_results_A549_melissa.csv")
+
+a549_df <- a549_df %>%
+  mutate(
+    log2FoldChange = Pb18eA549_vs_FungoControle_log2_fold_change,
+    padj           = Pb18eA549_vs_FungoControle_padj
+  )
+
+
+### Agora os mais complexos...
+# cada um possui varias combinações de comparações, preciso de um jeito de juntar informações de cada uma
+# dessas combinações; rodei o FragPipe Analyst na função "All pairs" para comaprar todos os pares de condições
+# possíveis, assim quandoa lguém pedir pra fazer alguma comparação ela ja ta pronta hehehe :)
+hapx_df <- read.csv("DE_results_HapX_Olivia.csv")
+zrt_df <- read.csv('DE_results_Zrt_Edu.csv')
+Ace_df <- read.csv("DE_results_Ace_Alexandre.csv")
+
+# say(
+#   "Separate all the comparisons I did between the endless
+#   conditions of the three big comparisons (Ace, HapX, and ZRT)",
+#   "dragon",
+#   what_color = rgb(0, 1, 1),
+#   by_color = "yellow"
+# )
+
+
+#  _________________________________________________________ 
+# / Separate all the comparisons I did between the endless  \
+# | conditions of the three big comparisons (Ace, HapX, and |
+# \ ZRT)                                                    /
+#  --------------------------------------------------------- 
+#       \
+#        \
+# 
+#         ^__^ 
+#         (oo)\ ________ 
+#         (__)\         )\ /\ 
+#              ||------w|
+#              ||      ||
+
+
+
+#------------------------------------------------------------
+# 1) GARANTA QUE O DATAFRAME EXISTE
+#------------------------------------------------------------
+
+# Se você tiver outro nome, por ex. hapX_df, df_hapx, etc,
+# mude aqui para o nome correto:
+
+
+##   IMPORTANTE: If you change here the "df" object, it will change the loops for COW
+
+# df <- hapx_df     #
+# OU                #
+df <- Ace_df      #
+#OU                 #
+# df <- zrt_df      #
+
+## NÃO PRECISA DESSA ETAPA PARA pedrosoi e A549 porque eles tem apenas UMA comparação
+
+# Confere rapidamente se o objeto existe e tem colunas
+stopifnot(exists("df"))
+stopifnot(is.data.frame(df))
+
+#------------------------------------------------------------
+# 2) CARREGA PACOTES
+#------------------------------------------------------------
+library(dplyr)
+library(purrr)
+library(stringr)
+
+#------------------------------------------------------------
+# 3) DEFINE QUAIS SÃO AS COLUNAS "COMUNS" A TODAS AS COMPARAÇÕES
+#------------------------------------------------------------
+
+# Aqui usamos os nomes que você citou; ajuste se estiver diferente:
+common_cols <- c("ProteinID", "GeneName", "Description")
+
+# Garante que essas colunas existem no seu df
+missing_common <- setdiff(common_cols, colnames(df))
+if (length(missing_common) > 0) {
+  stop("Estas colunas comuns não foram encontradas no df: ",
+       paste(missing_common, collapse = ", "))
+}
+
+#------------------------------------------------------------
+# 4) ACHA AS COLUNAS DE RESULTADO (log2FC / pval / padj)
+#------------------------------------------------------------
+
+# Define os sufixos esperados (do seu print: log2.fold.change, p.val, p.adj)
+suffixes <- c("log2_fold_change", "padj")
+
+# Monta uma regex para achar colunas que terminam com um desses sufixos
+pattern <- paste0("_(", paste0(stringr::str_replace_all(suffixes, "\\.", "\\\\."), collapse = "|"), ")$")
+
+# Seleciona os nomes das colunas de resultado
+res_cols <- colnames(df)[stringr::str_detect(colnames(df), pattern)]
+
+# Se não encontrar nenhuma, para e avisa
+if (length(res_cols) == 0) {
+  stop("Não encontrei colunas no padrão '*_log2_fold_change', '*_padj'.")
+}
+
+#------------------------------------------------------------
+# 5) EXTRAI O "NOME DA COMPARAÇÃO" (parte antes do sufixo)
+#------------------------------------------------------------
+
+# Remove o sufixo final para obter o nome base da comparação (ex: HapXBPS_vs_HapXFe)
+comparisons <- unique(stringr::str_replace(res_cols, pattern, ""))
+
+#------------------------------------------------------------
+# 6) CRIA UM DATAFRAME PARA CADA COMPARAÇÃO (LISTA NOMEADA)
+#------------------------------------------------------------
+
+# Para cada comparação, pegamos as 3 colunas correspondentes (se existirem)
+# e renomeamos para log2FoldChange, pval, padj (mais limpo pra trabalhar).
+comparisons_list_Ace <- purrr::set_names(comparisons) %>%
+  purrr::map(function(comp) {
+    
+    # Monta os nomes esperados das colunas dessa comparação
+    col_lfc  <- paste0(comp, "_log2_fold_change")
+    col_padj <- paste0(comp, "_padj")
+    
+    # Lista com as 3 colunas; algumas podem não existir dependendo do seu df
+    wanted <- c(col_lfc, col_padj)
+    
+    # Mantém somente as que realmente existem no df
+    wanted_present <- intersect(wanted, colnames(df))
+    
+    # Se por algum motivo nenhuma das 3 existir, retorna NULL (não cria esse item)
+    if (length(wanted_present) == 0) return(NULL)
+    
+    # Seleciona colunas comuns + colunas da comparação (usando dplyr::select explicitamente)
+    out <- df %>%
+      dplyr::select(dplyr::all_of(common_cols), dplyr::all_of(wanted_present)) %>%
+      # Renomeia apenas as colunas que existirem, para nomes padrão
+      dplyr::rename(
+        log2FoldChange = dplyr::all_of(col_lfc),
+        padj           = dplyr::all_of(col_padj)
+      )
+    
+    # Retorna o dataframe final dessa comparação
+    out
+  }) %>%
+  # Remove os NULL (comparações que não tinham colunas válidas)
+  purrr::compact()
+
+# #------------------------------------------------------------
+# # 7) CRIAR VARIÁVEIS NO AMBIENTE COM O NOME DA COMPARAÇÃO
+# #------------------------------------------------------------
+# 
+# # Isso cria objetos como HapXBPS_vs_HapXFe, HapXBPS_vs_WtBPS, etc.
+# #
+# list2env(comparisons_list, envir = .GlobalEnv)
+
+#------------------------------------------------------------
+# 8) CONFERÊNCIA 
+#------------------------------------------------------------
+
+# Mostra os nomes das comparações criadas
+names(comparisons_list_hapx) ## lista HAPX
+names(comparisons_list_Ace)  ## lista ACE
+names(comparisons_list_zrt)
+# Rodei tanto ace como hapx e ZRT no mesmo loop pq deus me livre adaptar isso
+# dor de caceça do cao mexer nisso...
+
+
+
+
+# say(
+#   "Made a loop to filter the data with different parameters to make people happy
+#   and so they don't ask me to do it after 6 months when I dont remember shit about that code",
+#   "grumpycat",
+#   what_color = rgb(0, 1, 1),
+#   by_color = "yellow"
+# )
+
+
+# _______________________________________________________ 
+# / Made a loop to filter the data with different         \
+# | parameters to make people happy and so they don't ask |
+# | me to do it after 6 months when I dont remember shit  |
+# \ about that code                                       /
+#  ------------------------------------------------------- 
+#      \
+#       \
+# 
+#       ﾊ _ ﾊ
+#       ಠ X ಠ
+
+
+# ====================================================================================
+# loop para organizar e salvar as informações mais relevantes sobre esses datasets  #
+# ====================================================================================
+# Lista nomeada com os resultados
+### IMPORTANTE: so substitui a lista, uma por vez, para gerar os resultados de cada condição
+## e isso será usado aqui para FILTRAGEM e também para o VOLCANO lá embaixo...
+res_list <- c(comparisons_list_zrt)
+# Muriformes_CM6pH2e3      =  pedrosoi_df,
+# A549_Infection           =      a549_df) ##quando for A549 e Muriformes, faça uma lista com eles
+  # comparisons_list_Ace)
+  # comparisons_list_hapx,
+  # comparisons_list_zrt)
+
+  # a549 
+######################################################################################
+library(dplyr)
+library(readr)
+
+for (cond in names(res_list)) {
+  res <- res_list[[cond]]
+  
+  df <- as.data.frame(res) %>%
+    dplyr::filter(!is.na(padj), !is.na(log2FoldChange))
+  
+  padj_005 <- sum(df$padj < 0.05, na.rm = TRUE)
+  padj_001 <- sum(df$padj < 0.01, na.rm = TRUE)
+
+  # padj <= 0.01 e |log2FC| >= 2
+  padj_001_log2fc_2 <- sum(df$padj < 0.01 & abs(df$log2FoldChange) >= 2, na.rm = TRUE)
+      padj_001_log2fc_2_UP <- sum(df$padj < 0.01 & df$log2FoldChange >= 2,  na.rm = TRUE)
+      padj_001_log2fc_2_DOWN <- sum(df$padj < 0.01 & df$log2FoldChange <= -2, na.rm = TRUE)
+
+  # padj <= 0.05 e |log2FC| >= 2
+  padj_005_log2fc_2 <- sum(df$padj < 0.05 & abs(df$log2FoldChange) >= 2, na.rm = TRUE)
+      padj_005_log2fc_2_UP <- sum(df$padj < 0.05 & df$log2FoldChange >= 2,  na.rm = TRUE)
+      padj_005_log2fc_2_DOWN <- sum(df$padj < 0.05 & df$log2FoldChange <= -2, na.rm = TRUE)
+
+  # padj <= 0.05 e |log2FC| >= 1
+  padj_005_log2fc_1 <- sum(df$padj < 0.05 & abs(df$log2FoldChange) >= 1, na.rm = TRUE)
+      padj_005_log2fc_1_UP <- sum(df$padj < 0.05 & df$log2FoldChange >= 1,  na.rm = TRUE)
+      padj_005_log2fc_1_DOWN <- sum(df$padj < 0.05 & df$log2FoldChange <= -1, na.rm = TRUE)
+
+  # padj <= 0.05 e |log2FC| >= 0.58
+  padj_005_log2fc_058 <- sum(df$padj < 0.05 & abs(df$log2FoldChange) >= 0.58, na.rm = TRUE)
+      padj_005_log2fc_058_UP <- sum(df$padj < 0.05 & df$log2FoldChange >= 0.58,  na.rm = TRUE)
+      padj_005_log2fc_058_DOWN <- sum(df$padj < 0.05 & df$log2FoldChange <= -0.58, na.rm = TRUE)
+
+  texto <- paste0(
+    "Para a condição ", cond, ", considerando APENAS por Padj <= 0.05 e Padj <= 0.01, temos, respectivamente ",
+    padj_005, " e ", padj_001, " proteinas DE.",
+    "\n\n Filtrando SIMULTANEAMENTE por Padj e Log2FoldChange, temos:",
+    "\n Padj <= 0.01 e |Log2FoldChange| >= 2 (4x mais/menos expressas) = ", padj_001_log2fc_2,
+    " proteínas. Sendo Nº de Induzidas = ", padj_001_log2fc_2_UP, " e Nº de Reprimidas = ", padj_001_log2fc_2_DOWN, ". (Filtro MUITO restritivo!)",
+
+    "\n Padj <= 0.05 e |Log2FoldChange| >= 2 (4x mais/menos expressas) = ", padj_005_log2fc_2,
+    " proteínas. Sendo Nº de Induzidas = ", padj_005_log2fc_2_UP, " e Nº de Reprimidas = ", padj_005_log2fc_2_DOWN,".",
+    "\n Padj <= 0.05 e |Log2FoldChange| >= 1 (2x mais/menos expressas) = ", padj_005_log2fc_1,
+    " proteínas. Sendo Nº de Induzidas = ", padj_005_log2fc_1_UP, " e Nº de Reprimidas = ", padj_005_log2fc_1_DOWN,".",
+
+    "\n Padj <= 0.05 e |Log2FoldChange| >= 0.58 (1.5x mais/menos expressas) = ", padj_005_log2fc_058,
+    " proteínas. Sendo Nº de Induzidas = ", padj_005_log2fc_058_UP, " e Nº de Reprimidas = ", padj_005_log2fc_058_DOWN, ". (Filtro POUCO restritivo!)"
+  )
+  
+  readr::write_lines(texto, file = paste0("Stat_thresholds_of_", cond, ".txt"))
+  
+  texto2 <- paste0(names(res_list))
+  
+  readr::write_lines(texto2, file = paste0("Comparisons.txt"))
+}
+
+# say(
+#   "another loop to save all data-frames for those different
+#   filters; save as csv and xlxs so people can open in excel",
+#   "frog",
+#   what_color = rgb(0, 1, 1),
+#   by_color = "yellow"
+# )
+
+
+#  _______________________________________________________ 
+# / another loop to save all data-frames for those        \
+# | different filters; save as csv and xlsx so people can |
+# \ open in excel                                         /
+#  ------------------------------------------------------- 
+#      \
+#       \
+# 
+#         (.)_(.)
+#      _ (   _   ) _
+#     / \/`-----'\/ \
+#   __\ ( (     ) ) /__
+#   )   /\ \._./ /\   (
+#    )_/ /|\   /|\ \_(  <- perereca suicida, se joga e quica
+
+## Exportando as tabelas contendo as informações gênicas importantes para as análises seguintes
+
+library(dplyr)
+library(openxlsx)
+library(readr)
+
+# Lista nomeada com os resultados
+
+for (cond in names(res_list)) {
+  
+  df <- as.data.frame(res_list[[cond]]) %>%
+    filter(
+      !is.na(padj),
+      !is.na(log2FoldChange)
+    )
+  
+  # =========================
+  # UPREGULATED
+  # =========================
+  
+  # (A) ##   padj 0.01 e |log2FC| 2
+ 
+  df_up_padj_001_log2fc_2 <- df %>%
+    filter(padj < 0.01, log2FoldChange >= 2) %>%
+    mutate(GeneName = row.names(.))
+  
+  write.xlsx(df_up_padj_001_log2fc_2,
+             file = paste0(cond, "_up_padj_001_log2fc_2.xlsx"))
+  # write.csv(df_up_padj_001_log2fc_2,
+  #           file = paste0(cond, "_up_padj_001_log2fc_2.csv"),
+  #           row.names = FALSE)
+  
+  # (B) ##   padj 0.05 e |log2FC| 2
+  
+  df_up_padj_005_log2fc_2 <- df %>%
+    filter(padj < 0.05, log2FoldChange >= 2) %>%
+    mutate(GeneName = row.names(.))
+  
+  write.xlsx(df_up_padj_005_log2fc_2,
+             file = paste0(cond, "_up_padj_005_log2fc_2.xlsx"))
+  # write.csv(df_up_padj_005_log2fc_2,
+  #           file = paste0(cond, "_up_padj_005_log2fc_2.csv"),
+  #           row.names = FALSE)
+  
+  # (C) ##   padj 0.05 e |log2FC| 1
+  
+  df_up_padj_005_log2fc_1 <- df %>%
+    filter(padj < 0.05, log2FoldChange >= 1) %>%
+    mutate(GeneName = row.names(.))
+  
+  write.xlsx(df_up_padj_005_log2fc_1,
+             file = paste0(cond, "_up_padj_005_log2fc_1.xlsx"))
+  # write.csv(df_up_padj_005_log2fc_1,
+  #           file = paste0(cond, "_up_padj_005_log2fc_1.csv"),
+  #           row.names = FALSE)
+  
+  # (D) ##   padj 0.05 e |log2FC| 0.58
+  
+  df_up_padj_005_log2fc_058 <- df %>%
+    filter(padj < 0.05, log2FoldChange >= 0.58) %>%
+    mutate(GeneName = row.names(.))
+  
+  write.xlsx(df_up_padj_005_log2fc_058,
+             file = paste0(cond, "_up_padj_005_log2fc_058.xlsx"))
+  # write.csv(df_up_padj_005_log2fc_058,
+  #           file = paste0(cond, "_up_padj_005_log2fc_058.csv"),
+  #           row.names = FALSE)
+  
+ 
+   # =========================
+  # DOWNREGULATED
+  # =========================
+  
+  # (A) ##   padj 0.01 e |log2FC| 2
+  
+  df_down_padj_001_log2fc_2 <- df %>%
+    filter(padj < 0.01, log2FoldChange <= -2) %>%
+    mutate(GeneName = row.names(.))
+  
+  write.xlsx(df_down_padj_001_log2fc_2,
+             file = paste0(cond, "_down_padj_001_log2fc_2.xlsx"))
+  # write.csv(df_down_padj_001_log2fc_2,
+  #           file = paste0(cond, "_down_padj_001_log2fc_2.csv"),
+  #           row.names = FALSE)
+  
+  # (B) ##   padj 0.05 e |log2FC| 2
+  
+  df_down_padj_005_log2fc_2 <- df %>%
+    filter(padj < 0.05, log2FoldChange <= -2) %>%
+    mutate(GeneName = row.names(.))
+  
+  write.xlsx(df_down_padj_005_log2fc_2,
+             file = paste0(cond, "_down_padj_005_log2fc_2.xlsx"))
+  # write.csv(df_down_padj_005_log2fc_2,
+  #           file = paste0(cond, "_down_padj_005_log2fc_2.csv"),
+  #           row.names = FALSE)
+  
+  # (C) ##   padj 0.05 e |log2FC| 1
+  
+  df_down_padj_005_log2fc_1 <- df %>%
+    filter(padj < 0.05, log2FoldChange <= -1) %>%
+    mutate(GeneName = row.names(.))
+  
+  write.xlsx(df_down_padj_005_log2fc_1,
+             file = paste0(cond, "_down_padj_005_log2fc_1.xlsx"))
+  # write.csv(df_down_padj_005_log2fc_1,
+  #           file = paste0(cond, "_down_padj_005_log2fc_1.csv"),
+  #           row.names = FALSE)
+  
+  # (D) ##   padj 0.05 e |log2FC| 0.58
+  
+  df_down_padj_005_log2fc_058 <- df %>%
+    filter(padj < 0.05, log2FoldChange <= -0.58) %>%
+    mutate(GeneName = row.names(.))
+  
+  write.xlsx(df_down_padj_005_log2fc_058,
+             file = paste0(cond, "_down_padj_005_log2fc_058.xlsx"))
+  # write.csv(df_down_padj_005_log2fc_058,
+  #           file = paste0(cond, "_down_padj_005_log2fc_058.csv"),
+  #           row.names = FALSE)
+  
+  # =========================
+  # Mensagem de controle
+  # =========================
+  # =========================
+  # Mensagem de controle
+  # =========================
+  cat("\n", cond, "\n",
+      "UP padj<0.01 log2FC>=2:", nrow(df_up_padj_001_log2fc_2), "|",
+      "DOWN padj<0.01 log2FC<=-2:", nrow(df_down_padj_001_log2fc_2), "\n")
+  
+  
+  # ===============================
+  # salvando a mensagem de controle
+  # ================================
+  # mensagem_DE <- paste0(
+  #   cond, "\n",
+  #   "UP padj<0.01 log2FC>=2: ", nrow(df_up_padj_001_log2fc_2), "\n",
+  #   "DOWN padj<0.01 log2FC<=-2: ", nrow(df_down_padj_001_log2fc_2), "\n"
+  # )
+  # 
+  # readr::write_lines(mensagem_DE, file = paste0("Data_DE_", cond, ".txt"))
+
+}
+
+# say(
+#   "plot a volcano for each comparison I have on the list; I will keep the PADJ and
+#   logFC fixed at the beginning to generate less graphs and do not explode my laptop;
+#   I will only save the Panel for each, keep the individual 'Zoom in' and 'Zoom out' withouth saving",
+#   "facecat",
+#   what_color = rgb(0, 1, 1),
+#   by_color = "yellow"
+# )
+
+
+#  _________________________________________________________ 
+# / plot a volcano for each comparison I have on the list;  \
+# | I will keep the PADJ and logFC fixed at the beginning   |
+# | to generate less graphs and do not explode my laptop; I |
+# | will only save the Panel for each, keep the individual  |
+# \ 'Zoom in' and 'Zoom out' withouth saving                /
+#  --------------------------------------------------------- 
+#        \
+#         \
+# 
+#          /\ /\
+#          (O o)
+#         =(:^:)=
+#            U      [nosig]
+
+
+# -----------------------------
+# Loop volcano (zoom-out, zoom-in, painel) + caption UP/DOWN
+# -----------------------------
+# thresholds
+pCut <- list(Padj_005 = 0.05)#,Padj_001 = 0.01)
+fcCut <- list(Log2FC_1 = 1)#, Log2FC_058 = 0.58, Log2FC_2 = 2)
+
+for (cond in names(res_list)) {
+  
+  # pega o objeto da comparação atual
+  res_obj <- res_list[[cond]]
+  
+  # transforma em data.frame e guarda o gene nas linhas
+  res_df <- as.data.frame(res_obj)
+  res_df$gene <- rownames(res_df)
+  
+  # remove linhas com NA (necessário p/ contagens e volcano)
+  df_counts <- dplyr::filter(res_df, !is.na(padj), !is.na(log2FoldChange))
+  
+  # loop por cada cutoff de padj (usando nomes para acessar e rotular)
+  for (pname in names(pCut)) {
+    
+    pvalue <- pCut[[pname]]  # valor numérico (0.01 ou 0.05)
+    
+    # loop por cada cutoff de log2FC
+    for (fcname in names(fcCut)) {
+      
+      fold_change_cut <- fcCut[[fcname]]  # valor numérico (2, 1, 0.58)
+      
+      # conta UP/DOWN com os cutoffs atuais
+      n_up   <- sum(df_counts$padj < pvalue & df_counts$log2FoldChange >=  fold_change_cut, na.rm = TRUE)
+      n_down <- sum(df_counts$padj < pvalue & df_counts$log2FoldChange <= -fold_change_cut, na.rm = TRUE)
+      
+      # legenda/caption coerente com os cutoffs atuais
+      caption_txt <- paste0(
+        "UP = ", n_up, " | DOWN = ", n_down,
+        " (padj < ", pvalue, "; |log2FC| ≥ ", fold_change_cut, ")"
+      )
+      
+      # ------------------ Zoom out
+      p_volc_out <- EnhancedVolcano::EnhancedVolcano(
+        res_df,
+        lab = res_df$ProteinID,
+        x = "log2FoldChange",
+        y = "padj",
+        pCutoff = pvalue,
+        FCcutoff = fold_change_cut,
+        labSize = 3.0,
+        title = cond,
+        subtitle = paste0("Zoom out (", pname, ", ", fcname, ")"),
+        subtitleLabSize = 16,
+        titleLabSize = 20,
+        caption = caption_txt,
+        captionLabSize = 14,
+         ylim = c(0, 15),
+        xlim = c(-10, 10)
+      )
+      
+      # salva com nome único (não sobrescreve)
+      # png(filename = paste0("Volcano_", cond, "_", pname, "_", fcname, "_zoom_out.png"),
+      #     width = 5500, height = 5000, res = 600)
+      # print(p_volc_out)
+      # dev.off()
+      # 
+      # ------------------ Zoom in
+      p_volc_in <- EnhancedVolcano::EnhancedVolcano(
+        res_df,
+        lab = res_df$ProteinID,
+        x = "log2FoldChange",
+        y = "padj",
+        pCutoff = pvalue,
+        FCcutoff = fold_change_cut,
+        labSize = 3.0,
+        title = " ",
+        subtitle = paste0("Zoom in"),
+        subtitleLabSize = 16,
+        titleLabSize = 20,
+        caption = caption_txt,
+        captionLabSize = 14,
+        ylim = c(0, 4),
+        xlim = c(-10, 10)
+      )
+      
+      # png(filename = paste0("Volcano_", cond, "_", pname, "_", fcname, "_zoom_in.png"),
+      #     width = 5500, height = 5000, res = 600)
+      # print(p_volc_in)
+      # dev.off()
+      
+      # ------------------ Painel
+      p_panel <- cowplot::plot_grid(
+        p_volc_out, p_volc_in,
+        labels = c("A", "B"),
+        nrow = 2, ncol = 1,
+        label_size = 24
+      )
+      
+      png(filename = paste0("Painel_volcano_", cond, "_", pname, "_", fcname, ".png"),
+          width = 9000, height = 8000, res = 600)
+      print(p_panel)
+      dev.off()
+      
+      # log no console
+      # cat(cond, " | ", pname, " | ", fcname, " -> ", caption_txt, "\n", sep = "")
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
